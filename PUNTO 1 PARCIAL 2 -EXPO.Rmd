@@ -1,0 +1,283 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-07-05"
+---
+
+# INicialización, preparación de datos y calculo del estadistico de injusticia observado (T_real)
+
+```{r}
+# Cargamos la librería dplyr, fundamental para la manipulación de datos.
+library(dplyr)
+
+# -----------------------------------------------------------------
+# PASO 1: CREAR EL DATA FRAME DEL MUNDIAL 2010
+# -----------------------------------------------------------------
+mundial_2010 <- data.frame(
+  
+  codigo = c("RSA", "MEX", "URU", "FRA", "ARG", "NGA", "KOR", "GRE", "ENG", "USA", "ALG", "SLO", "GER", "AUS", "SRB", "GHA", "NED", "DEN", "JPN", "CMR", "ITA", "PAR", "NZL", "SVK", "BRA", "PRK", "CIV", "POR", "ESP", "SUI", "HON", "CHI"),
+  equipo = c("Sudáfrica", "México", "Uruguay", "Francia", "Argentina", "Nigeria", "Corea del Sur", "Grecia", "Inglaterra", "Estados Unidos", "Argelia", "Eslovenia", "Alemania", "Australia", "Serbia", "Ghana", "Países Bajos", "Dinamarca", "Japón", "Camerún", "Italia", "Paraguay", "Nueva Zelanda", "Eslovaquia", "Brasil", "Corea del Norte", "Costa de Marfil", "Portugal", "España", "Suiza", "Honduras", "Chile"),
+  ranking = c(85, 18, 25, 9, 6, 32, 48, 16, 7, 11, 29, 49, 5, 24, 20, 38, 3, 27, 40, 14, 4, 21, 83, 33, 1, 91, 19, 10, 2, 13, 35, 17),
+  confederacion = c("CAF", "CONCACAF", "CONMEBOL", "UEFA", "CONMEBOL", "CAF", "AFC", "UEFA", "UEFA", "CONCACAF", "CAF", "UEFA", "UEFA", "AFC", "UEFA", "CAF", "UEFA", "UEFA", "AFC", "CAF", "UEFA", "CONMEBOL", "OFC", "UEFA", "CONMEBOL", "AFC", "CAF", "UEFA", "UEFA", "UEFA", "CONCACAF", "CONMEBOL"),
+  bombo = c(1, 2, 3, 4, 1, 3, 2, 4, 1, 2, 3, 4, 1, 2, 4, 3, 1, 4, 2, 3, 1, 3, 2, 4, 1, 2, 3, 4, 1, 4, 2, 3),
+  grupo_real = c("A", "A", "A", "A", "B", "B", "B", "B", "C", "C", "C", "C", "D", "D", "D", "D", "E", "E", "E", "E", "F", "F", "F", "F", "G", "G", "G", "G", "H", "H", "H", "H"),
+  stringsAsFactors = FALSE # El argumento se pone al final
+)
+
+# Calcular Percentil de Fuerza
+mundial_2010 <- mundial_2010 %>%
+  mutate(percentil_fuerza = round((rank(-ranking) / n()) * 100, 2))
+
+# -----------------------------------------------------------------
+# PASO 2: CALCULAR MÉTRICAS DE FUERZA POR GRUPO
+# -----------------------------------------------------------------
+metricas_grupos_reales <- mundial_2010 %>%
+  group_by(grupo_real) %>%
+  summarise(
+    media_fuerza = mean(percentil_fuerza),
+    sd_fuerza = sd(percentil_fuerza)
+  )
+
+print("Métricas de Fuerza para cada grupo del Mundial 2010:")
+print(as.data.frame(metricas_grupos_reales))
+
+# -----------------------------------------------------------------
+# PASO 3: CALCULAR EL ÍNDICE DE BALANCE ESTRUCTURAL (IBE) OBSERVADO
+# -----------------------------------------------------------------
+B_ext_real <- sd(metricas_grupos_reales$media_fuerza)
+B_int_real <- mean(metricas_grupos_reales$sd_fuerza)
+IBE_real <- B_ext_real + B_int_real
+
+print(paste("Índice de Balance Estructural (IBE) observado:", round(IBE_real, 4)))
+
+
+
+
+```
+
+# Construcción del algoritmo
+
+```{r}
+#---------------------------------------------------------------------
+# PASO 4: FUNCIÓN DE SIMULACIÓN 
+#---------------------------------------------------------------------
+
+simular_sorteo_IBE <- function(equipos_df) {
+  
+  # Usamos un bucle infinito que romperemos cuando un sorteo sea exitoso.
+  # Esto previene los errores cuando el sorteo se queda atascado.
+  while (TRUE) {
+    
+    
+    # el bucle while simplemente comenzará una nueva iteración.
+    sorteo_exitoso <- try({
+      
+      # 1. PREPARACIÓN INICIAL (dentro del bucle para reiniciar en cada intento)
+      grupos <- list(A=NULL, B=NULL, C=NULL, D=NULL, E=NULL, F=NULL, G=NULL, H=NULL)
+      
+      # 2. ASIGNACIÓN BOMBO 1
+      grupos$A <- equipos_df %>% filter(codigo == "RSA")
+      cabezas_de_serie_sorteados <- equipos_df %>% filter(bombo == 1, codigo != "RSA") %>% sample_n(size = nrow(.))
+      grupos_libres <- LETTERS[2:8]
+      for(i in 1:nrow(cabezas_de_serie_sorteados)) {
+        grupos[[grupos_libres[i]]] <- cabezas_de_serie_sorteados[i, ]
+      }
+      
+      # 3. ASIGNACIÓN DEL RESTO DE BOMBOS
+      bombos_a_sortear <- list(
+        equipos_df %>% filter(bombo == 2),
+        equipos_df %>% filter(bombo == 3),
+        equipos_df %>% filter(bombo == 4)
+      )
+      
+      for(bombo_actual in bombos_a_sortear) {
+        equipos_a_colocar <- bombo_actual %>% sample_n(size = nrow(.))
+        
+        for(j in 1:nrow(equipos_a_colocar)) {
+          equipo_actual <- equipos_a_colocar[j, ]
+          
+          grupos_posibles <- names(grupos)[sapply(grupos, function(g) {
+            if (is.null(g)) return(TRUE) # Grupo vacío siempre es válido
+            cond_lleno <- nrow(g) < 4
+            cond_uefa <- !(equipo_actual$confederacion == "UEFA" && sum(g$confederacion == "UEFA") >= 2)
+            cond_conf <- !(equipo_actual$confederacion != "UEFA" && equipo_actual$confederacion %in% g$confederacion)
+            return(cond_lleno && cond_uefa && cond_conf)
+          })]
+          
+          
+          grupo_elegido <- sample(grupos_posibles, 1)
+          grupos[[grupo_elegido]] <- rbind(grupos[[grupo_elegido]], equipo_actual)
+        }
+      }
+      
+      # Si llegamos aquí, el sorteo fue exitoso. Devolvemos el data frame.
+      bind_rows(grupos, .id = "grupo_simulado")
+      
+    }, silent = TRUE) 
+    
+    # Si 'sorteo_exitoso' no es un error, salimos del bucle while.
+    if (!inherits(sorteo_exitoso, "try-error")) {
+      break
+    }
+  } # Fin del bucle while
+
+  # 4. CÁLCULO DEL IBE (ahora fuera del bucle, sobre el sorteo exitoso)
+  metricas_sim <- sorteo_exitoso %>%
+    group_by(grupo_simulado) %>%
+    summarise(
+      media_fuerza = mean(percentil_fuerza),
+      sd_fuerza = sd(percentil_fuerza),
+      .groups = 'drop'
+    )
+      
+  B_ext_sim <- sd(metricas_sim$media_fuerza)
+  B_int_sim <- mean(metricas_sim$sd_fuerza)
+  IBE_simulado <- B_ext_sim + B_int_sim
+    
+  return(IBE_simulado)
+}
+
+
+
+```
+
+```{r}
+
+#---------------------------------------------------------------------
+# PASO 5 (OPTIMIZADO): EJECUTAR LA SIMULACIÓN EN PARALELO
+#---------------------------------------------------------------------
+# Cargamos las librerías necesarias para el procesamiento en paralelo.
+library(parallel)
+library(doParallel)
+library(foreach)
+
+# 1. CONFIGURAR EL CLÚSTER PARALELO
+n_nucleos <- detectCores() - 1
+cl <- makeCluster(n_nucleos)
+registerDoParallel(cl)
+
+print(paste("Configurando clúster paralelo con", n_nucleos, "núcleos."))
+
+# 2. DEFINIR VARIABLES Y ESTABLECER SEMILLA
+n_simulaciones <- 1000
+set.seed(42) 
+
+print(paste("Iniciando", n_simulaciones, "simulaciones en paralelo..."))
+print("Esto puede tardar unos minutos, pero será mucho más rápido que secuencial.")
+
+# 3. EJECUTAR EL BUCLE PARALELO CON 'foreach'
+distribucion_IBE <- foreach(
+  i = 1:n_simulaciones, 
+  .combine = c, 
+  .packages = "dplyr"
+) %dopar% {
+  
+  simular_sorteo_IBE(mundial_2010)
+}
+
+# 4. DETENER EL CLÚSTER
+stopCluster(cl)
+
+print("Simulación en paralelo completada con éxito.")
+cat("\n") # Salto de línea para separar la salida.
+
+```
+
+```{r}
+#---------------------------------------------------------------------
+# PASO 6: ANALIZAR Y VISUALIZAR RESULTADOS
+#---------------------------------------------------------------------
+library(ggplot2)
+
+# Calculamos el p-valor comparando la distribución simulada con el valor real
+p_valor <- sum(distribucion_IBE >= IBE_real) / n_simulaciones
+
+# Imprimimos los resultados estadísticos clave
+print(paste("IBE real observado:", round(IBE_real, 4)))
+print(paste("IBE promedio simulado:", round(mean(distribucion_IBE), 4)))
+print(paste("p-valor:", p_valor))
+
+# Interpretamos el resultado
+if (p_valor < 0.05) {
+  print("Veredicto: El sorteo de 2010 fue significativamente más desbalanceado que un sorteo aleatorio.")
+} else {
+  print("Veredicto: El desbalance del sorteo de 2010 está dentro del rango esperado por el azar.")
+}
+cat("\n")
+
+# --- Creación del Gráfico ---
+
+# 1. Definimos variables para la anotación (hace el código más limpio)
+etiqueta_real <- glue("Sorteo Real\nIBE = {round(IBE_real, 2)}")
+x_pos_etiqueta <- IBE_real + 5 # Posición X para la etiqueta
+y_pos_etiqueta <- 0.15          # Posición Y para la etiqueta
+
+# 2. Creamos el gráfico capa por capa
+grafico_IBE_profesional <- ggplot(data.frame(IBE_values = distribucion_IBE), aes(x = IBE_values)) +
+  
+  # Capa 1: Histograma de la distribución empírica
+  geom_histogram(
+    aes(y = after_stat(density)), 
+    bins = 50, 
+    fill = "#0072B2", 
+    color = "white", 
+    alpha = 0.8
+  ) +
+  
+  # Capa 2: Curva de densidad suavizada (Kernel Density Estimate)
+  geom_density(
+    color = "#D55E00", 
+    linewidth = 1.1 
+  ) +
+  
+  # Capa 3: Línea vertical para el valor observado
+  geom_vline(
+    xintercept = IBE_real, 
+    color = "#E69F00", 
+    linetype = "longdash", 
+    linewidth = 1
+  ) +
+  
+  # Capa 4: Anotación con flecha (la mejora clave)
+  annotate(
+    "label",
+    x = x_pos_etiqueta,
+    y = y_pos_etiqueta,
+    label = etiqueta_real,
+    hjust = 0.5, 
+    color = "#333333",
+    fontface = "bold"
+  ) +
+  # La flecha que conecta la etiqueta con la línea
+  annotate(
+    "segment",
+    x = x_pos_etiqueta * 0.98, 
+    xend = IBE_real + 0.2,     
+    y = y_pos_etiqueta,
+    yend = y_pos_etiqueta * 0.5, # Apunta hacia abajo
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+    color = "#333333"
+  ) +
+  
+  # Capa 5: Títulos y etiquetas de los ejes
+  labs(
+    title = "Distribución Empírica del Índice de Balance Estructural (IBE)",
+    subtitle = glue("Resultado de {n_simulaciones} simulaciones del sorteo | Valor p = {round(p_valor, 3)}"),
+    x = "Índice de Balance Estructural (IBE)",
+    y = "Densidad de Probabilidad"
+  ) +
+  
+  # Capa 6: Tema y ajustes estéticos finales
+  theme_bw(base_size = 14) + 
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray40"),
+    axis.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(), 
+    panel.border = element_rect(color = "gray20", linewidth = 1)
+  )
+
+# Mostramos el gráfico
+print(grafico_IBE_profesional)
+
+```
