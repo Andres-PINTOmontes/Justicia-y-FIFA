@@ -9,9 +9,9 @@ El objetivo de este estudio es abordar la cuestión de si el sorteo de la Copa M
 1. Índice de Balance Estructural (IBE)
 Se introdujo el IBE, una métrica compuesta que combina dos medidas de desbalance:
 
-###Balance Externo (Bext): Mide la disparidad en la fuerza promedio entre los grupos.
+### Balance Externo (Bext): Mide la disparidad en la fuerza promedio entre los grupos.
 
-###Balance Interno (Bint): Mide la disparidad dentro de los grupos en términos de la variabilidad de las fuerzas de los equipos.
+### Balance Interno (Bint): Mide la disparidad dentro de los grupos en términos de la variabilidad de las fuerzas de los equipos.
 
 2. Simulación de Monte Carlo
 Se realizaron 1,000 simulaciones de sorteos, replicando las reglas de la FIFA y respetando restricciones geográficas. El valor del IBE para el sorteo real de 2010 se comparó con la distribución empírica obtenida de las simulaciones.
